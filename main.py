@@ -1,56 +1,49 @@
 # Setup
+import argparse
+import time
+import torch
+import torch.multiprocessing as _mp
+#from test import test
+
 # import the game
 import gym_super_mario_bros
 # import the joypad wrapper
 from nes_py.wrappers import JoypadSpace
 # import the SIMPLIFIED controls
 from gym_super_mario_bros.actions import SIMPLE_MOVEMENT ## [['NOOP'], ['right'], ['right', 'A'], ['right', 'B'], ['right', 'A', 'B'], ['A'], ['left']]
-# import Frame Stacker Wrapper and GrayScaling Wrapper
-from gym.wrappers import GrayScaleObservation
-# import Vectorization Wrapper
-from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv
 # import Matplotlib to show the impact of frame stacking
 from matplotlib import pyplot as plt
+import numpy as np
 
-from train import train_model
-from env_preprocessor import processing_env
+#from train import train_model
 
-# 1. Create the base environment
-env = gym_super_mario_bros.make("SuperMarioBros-v0")
-#print(env.action_space) Discrete(256): 256 possible actions
+# Collect arguments passed by meeee!
+def parse():
+    parser = argparse.ArgumentParser(description="CS696 RL PROJECT4")
+    parser.add_argument('--world', default=1, help='Indicate World: [1,2,3,4,5,6,7,8]')
+    parser.add_argument('--stage', default=1, help='Indicate Stage: [1,2,3,4]')
+    parser.add_argument('--action_type', default='simple', help='Action Space: right/simple/complex')
+    parser.add_argument('--train', action='store_true', help='Train a Model')
+    parser.add_argument('--test', action='store_true', help='Test a Model')
+    parser.add_argument('--record', action='store_true', help='Record video')
+    try:
+        from argument import add_arguments
+        parser = add_arguments(parser)
+    except:
+        pass
+    args = parser.parse_args()
+    return args
 
-# 2. Simplify the controls
-env = JoypadSpace(env, SIMPLE_MOVEMENT)
-##print(env.action_space) Discrete(7): 7 possible actions
-#print(env.observation_space.shape) # Box(224, 240, 3): 224x240 pixels with 3 color channels
+def run(args, record_video=False):
+    start_time = time.time()
+    if args.train:
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(123)
+        else:
+            torch.manual_seed(123)
+        mp = _mp.get_context("spawn")
 
-#########  TESTING  #########
-# Create a flag - restart or not
-#done = True
-# Loop through each frame in the game
-#for step in range(5000):
-    # Start the game to begin with
-#    if done:
-        # Start the game
-#        state = env.reset()
-    # Get the next state, reward, done, and info based on the random action
-#    state, reward, done, info = env.step(env.action_space.sample())
-    # Display the game on the screen
-#    env.render()
-# Close the game
-#env.close()
-###########################
 
-# 3. Preproces the environment
-env = processing_env(env)
-
-# 4. Train model
-#train_model(env)
-
-# 5. Test model
-from test import test
-#test_model(env)
-from stable_baselines3 import PPO
-env = gym_super_mario_bros.make("SuperMarioBros-v0")
-model = PPO.load('./train/best_model_1000000')
-test(model, env, total_episodes=100, record_video=True)
+if __name__ == '__main__':
+    args = parse()
+    run(args, record_video=args.record)
