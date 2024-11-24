@@ -1,5 +1,7 @@
 import timeit
 import torch
+import torch.nn.functional as F
+from torch.distributions import Categorical
 from torch.utils.tensorboard import SummaryWriter
 
 from env import create_train_env
@@ -8,6 +10,7 @@ from model import ActorCritic
 LOG_PATH = "logs"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 CHECKPOINT = 500
+NUM_LOCAL_STEPS = 50
 
 
 def local_train(index, args, global_model, optimizer, save=False):
@@ -44,7 +47,32 @@ def local_train(index, args, global_model, optimizer, save=False):
         # Child Process gets the current parameters of the Global Model
         local_model.load_state_dict(global_model.state_dict())
 
-        
+        if done:
+            # Initialize h0 and c0 all zeros
+            h_0 = torch.zeros((1, 512), dtype=torch.float).to(DEVICE)
+            c_0 = torch.zeros((1, 512), dtype=torch.float).to(DEVICE)
+        else:
+            # Detach the hidden state of LSTM
+            h_0 = torch.detach().to(DEVICE)
+            c_0 = torch.detach().to(DEVICE)
+
+        log_policies = []
+        values = []
+        rewards = []
+        entropies = []
+
+        for _ in range(NUM_LOCAL_STEPS):
+            curr_step += 1
+            # Actor output, Critic output, Hidden and Cell states of the recurrent layer
+            logits, value, h_0, c_0 = local_model(state, h_0, c_0)
+
+            # Convert Actor output to Density
+            policy = F.softmax(logits, dim=1)
+            log_policy = F.log_softmax(logits, dim=1)
+            # High: sparse probability (unsure about the action), Low: concentrated probability (confident about the action)
+            entropy = -(policy * log_policy).sum(1, keepdim=True)
+
+                        
         break
     
     
