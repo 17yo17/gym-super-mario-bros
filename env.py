@@ -12,20 +12,23 @@ from nes_py.wrappers import JoypadSpace
 # Allows to spawn new process
 import subprocess
 # Directory to save 
-SAVE_PATH = "save_trained_model"
+SAVE_FILE = "save_trained_model/output.mp4"
 
 class Monitor:
     def __init__(self, width, height):
-        self.command = ["ffmpeg", "-y", "-f", "rawvideo", "-vcodec", "rawvideo", "-s", "{}X{}".format(width, height),
-                        "-pix_fmt", "rgb24", "-r", "60", "-i", "-", "-an", "-vcodec", "mpeg4", SAVE_PATH]
+        self.command = ['ffmpeg', '-y', '-f', 'rawvideo', '-vcodec', 'rawvideo', '-pix_fmt', 'rgb24', 
+                        '-s',  "{}X{}".format(width, height), '-r', '30', '-i', '-', '-an', '-vcodec', 'mpeg4', SAVE_FILE]
 
         try:
-            self.pipe = subprocess.Popen(self.command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.pipe = subprocess.Popen(self.command, stdin=subprocess.PIPE)
+            print("RECORDING VIDEO")
         except FileNotFoundError:
+            print("FAILED TO RECORD VIDEO")
             pass
     
     def record_frame(self, image_array):
-        self.pipe.stdin.write(image_array.tostring())
+        if self.pipe:
+            self.pipe.stdin.write(image_array.tobytes())
 
 def process_frame(frame):
     if frame is not None:
@@ -53,7 +56,7 @@ class CustomReward(Wrapper):
             self.monitor = None
 
     def step(self, action):
-        state, reward, done, info = self.self.env.step(action)
+        state, reward, done, info = self.env.step(action)
         if self.monitor:
             self.monitor.record_frame(state)
 
@@ -95,8 +98,8 @@ class CustomSkipFrame(Wrapper):
         # Stack frames
         last_states = []
         # Start skipping frames
-        for i in range(skip):
-            state, reward, done, info = self.env(action)
+        for i in range(self.skip):
+            state, reward, done, info = self.env.step(action)
             total_reward += reward
             if i >= self.skip / 2:
                 last_states.append(state)
@@ -140,59 +143,28 @@ def create_train_env(world, stage, action_type):
     env = CustomSkipFrame(env)
     return env, env.observation_space.shape[0], len(actions)
 
-class MultipleEnvironments:
-    def __init__(self, world, stage, action_type, num_envs):
 
-        # Create an inter-process communication between a pair of connected pipes
-        # agent_conns sends actions to each environment & env_conns sends observations and rewards back
-        self.agent_conns, self.env_conns = zip(*[mp.Pipe() for _ in range(num_envs)])
-
-        # Define agent's action space
-        if action_type == 'right':
-            actions = RIGHT_ONLY
-        elif action_type == 'simple':
-            actions = SIMPLE_MOVEMENT
-        else:
-            actions = COMPLEX_MOVEMENT
-
-        # Create the environments that specified
-        self.envs = [create_train_env(world, stage, actions) for _ in range(num_envs)]
-        self.num_states = self.envs[0].observation_space.shape[0]
-        self.num_acitons = len(actions)
-
-        # Parallelism
-        for index in range(num_envs):
-            process = mp.Process(target=self.run, args=(index,))
-            process.start()
-            self.env_conns[index].close()
-            print("Process{} End".format(index))
-
-    def run(self, index):
-        self.agent_conns[index].close()
-        while True:
-            print("ASDFGHJKL")
-            # Read data from one of the processing environments
-            request, action = self.env_conns[index].recv()
-            print("Request {}".format(request))
-            print("Actions {}".format(action))
-            if request == "step":
-                self.env_conns[index].send(self.env[index].step(action.item()))
-            elif request == "reset":
-                self.env_conns[index].send(self.envs[index].reset())
-            else:
-                raise NotImplementedError
-
+# Test the environment
 if __name__=="__main__":
     env = gym_super_mario_bros.make("SuperMarioBros-{}-{}-v0".format(1, 1))
-    
+    #env = gym_super_mario_bros.make("SuperMarioBros-{}-{}-v3".format(1, 1)) # for training
     # Monitor process
     monitor = Monitor(256, 240)
 
     # Reduce Action Space
     env = JoypadSpace(env, SIMPLE_MOVEMENT)
     print(env.action_space)
+
     # Customize Reward: [-15, 15] -> [-50, 50] 
     env = CustomReward(env, 1, 1, monitor)
     print(env.observation_space)
+
+    # Stack 4 frames
     env = CustomSkipFrame(env)
     print(env.observation_space.shape)        
+
+
+    env.reset()
+    for _ in range(1000):
+        action = env.action_space.sample()
+        env.step(action)
