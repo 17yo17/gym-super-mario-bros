@@ -5,8 +5,8 @@ Playing Super Mario Bros in Atari environment with RL Algorithms
 ```pip install cv2```
 ```pip install torch==2.5.1```
 ```pip install nes_py==8.2.1```
-```pip install gym_super_mario_bros==7.3.0```
-```pip install gym==0.21.0```
+```pip install gym_super_mario_bros==7.4.0```
+```pip install gym==0.24.1```
 
 ```conda install -c conda-forge ffmpeg```
 ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers
