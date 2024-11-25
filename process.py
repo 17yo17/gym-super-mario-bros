@@ -8,24 +8,17 @@ from env import create_train_env
 from model import ActorCritic
 
 LOG_PATH = "logs"
+TRAINED_MODEL_PATH = "my_trained_model"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NUM_LOCAL_STEPS = 50
-NUM_EPISODES = 5e6
-CHECKPOINT = int(NUM_EPISODES / NUM_LOCAL_STEPS)
+NUM_GLOBAL_STEPS = 5e5
+CHECKPOINT = 5000
+TERMINATE_STEP = int(NUM_GLOBAL_STEPS / NUM_LOCAL_STEPS)
 
 # Hyperparameters
 GAMMA = 0.9
 TAU = 1.0
 BETA = 0.01
-
-def save_checkpoint(model, optimizer, episode, filename="checkpoint.pth"):
-        checkpoint = {
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'episode': episode
-        }
-        torch.save(checkpoint, filename)
-        print(f"Checkpoint saved at episode {episode}")
 
 def local_train(index, args, global_model, optimizer, save=False):
     # Check CUDA availability and set up SEED
@@ -54,7 +47,7 @@ def local_train(index, args, global_model, optimizer, save=False):
     while True:
         if save:
             if curr_episode % CHECKPOINT == 0 and curr_episode > 0:
-                torch.save(global_model.state_dict(), "checkpoint_{}".format(curr_episode))
+                torch.save(global_model.state_dict(), "{}/{}_{}_checkpoint_{}.pth".format(TRAINED_MODEL_PATH, args.world, args.stage, curr_episode))
             print("Process {}: Episode {}".format(index, curr_episode))
 
         curr_episode += 1
@@ -93,7 +86,7 @@ def local_train(index, args, global_model, optimizer, save=False):
             state, reward, done, info = env.step(action)
             state = torch.from_numpy(state).to(DEVICE)
 
-            if curr_step > NUM_EPISODES:
+            if curr_step > NUM_GLOBAL_STEPS:
                 done = True
 
             # Reached terminate state, reset
@@ -153,12 +146,11 @@ def local_train(index, args, global_model, optimizer, save=False):
         optimizer.step()
 
         # Save Checkpoint
-        if curr_episode == CHECKPOINT:
+        if curr_episode == TERMINATE_STEP:
             print("Training process {} terminated".format(index))
             if save:
-                save_checkpoint(global_model, optimizer, curr_episode, filename="checkpoint_{}.pth".format(curr_episode))
-                end_time = timeit.default.timer()
-                print("The code run for %.2f s".format(end_time - state_time))
+                end_time = timeit.default_timer()
+                print("The code run for %.2f s".format(end_time - start_time))
             return
     
 

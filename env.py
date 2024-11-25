@@ -11,8 +11,9 @@ from gym_super_mario_bros.actions import RIGHT_ONLY, SIMPLE_MOVEMENT, COMPLEX_MO
 from nes_py.wrappers import JoypadSpace
 # Allows to spawn new process
 import subprocess
+
 # Directory to save 
-SAVE_FILE = "save_trained_model/output.mp4"
+SAVE_FILE = "recorded_video/output.mp4"
 
 class Monitor:
     def __init__(self, width, height):
@@ -90,42 +91,34 @@ class CustomSkipFrame(Wrapper):
         super(CustomSkipFrame, self).__init__(env)
         self.observation_space = Box(low=0, high=255, shape=(skip, 84, 84))
         self.skip = skip
-        self.states = np.zeros((skip, 84, 84), dtype=np.float32)
 
     def step(self, action):
-        # Accumulate all rewards (include rewards from skipped frames)
         total_reward = 0
-        # Stack frames
-        last_states = []
-        # Start skipping frames
+        states = []
+        state, reward, done, info = self.env.step(action)
         for i in range(self.skip):
-            state, reward, done, info = self.env.step(action)
-            total_reward += reward
-            if i >= self.skip / 2:
-                last_states.append(state)
-            if done:
-                self.reset()
-                return self.states[None, :, :, :].astype(np.float32), total_reward, done, info
-        
-        # Stack the last two frames (i = 2 and 3): (2,84,84) -> (84,84)
-        # Maxpool to extract important info from a frame
-        max_state = np.max(np.concatenate(last_states, 0), 0)
-        # Shift one: first 3 frames will become next three frames
-        self.states[:-1] = self.states[1:]
-        # Append the maxpooled frame to at the end of the states stack
-        self.states[-1] = max_state
-        return self.states[None, :, :, :].astype(np.float32)
+            if not done:
+                state, reward, done, info = self.env.step(action)
+                total_reward += reward
+                states.append(state)
+            else:
+                states.append(state)
+        states = np.concatenate(states, 0)[None, :, :, :]
+        return states.astype(np.float32), reward, done, info
 
     def reset(self):
         state = self.env.reset()
-        self.states = np.concatenate([state for _ in range(self.skip)], 0)[None, :, :, :]
-        return self.states.astype(np.float32)
+        states = np.concatenate([state for _ in range(self.skip)], 0)[None, :, :, :]
+        return states.astype(np.float32)
         
-def create_train_env(world, stage, action_type):
+def create_train_env(world, stage, action_type, record=False):
     env = gym_super_mario_bros.make("SuperMarioBros-{}-{}-v0".format(world, stage))
     
     # Monitor process
-    monitor = Monitor(256, 240)
+    if record:
+        monitor = Monitor(256, 240)
+    else:
+        monitor = None
 
     # Define agent's action space
     if action_type == 'right':
@@ -146,25 +139,27 @@ def create_train_env(world, stage, action_type):
 
 # Test the environment
 if __name__=="__main__":
-    env = gym_super_mario_bros.make("SuperMarioBros-{}-{}-v0".format(1, 1))
+    #env = gym_super_mario_bros.make("SuperMarioBros-{}-{}-v0".format(1, 1))
     #env = gym_super_mario_bros.make("SuperMarioBros-{}-{}-v3".format(1, 1)) # for training
     # Monitor process
-    monitor = Monitor(256, 240)
+    #monitor = Monitor(256, 240)
 
     # Reduce Action Space
-    env = JoypadSpace(env, SIMPLE_MOVEMENT)
-    print(env.action_space)
+    #env = JoypadSpace(env, SIMPLE_MOVEMENT)
+    #print(env.action_space)
 
     # Customize Reward: [-15, 15] -> [-50, 50] 
-    env = CustomReward(env, 1, 1, monitor)
-    print(env.observation_space)
+    #env = CustomReward(env, 1, 1, monitor)
+    #print(env.observation_space)
 
     # Stack 4 frames
-    env = CustomSkipFrame(env)
-    print(env.observation_space.shape)        
+    #env = CustomSkipFrame(env)
+    #print(env.observation_space.shape)        
+    env, num_states, num_actions = create_train_env(1, 1, 'simple', True)
 
-    
     env.reset()
-    for _ in range(1000):
+    for _ in range(2000):
         action = env.action_space.sample()
-        env.step(action)
+        s, r, d, i = env.step(action)
+        if d:
+            env.reset()

@@ -6,17 +6,10 @@ import time
 
 import torch
 import torch.multiprocessing as _mp
-#from test import test
 
-# import the game
 import gym_super_mario_bros
 from agent import Agent
-from env import MultipleEnvironments
-# import Matplotlib to show the impact of frame stacking
-from matplotlib import pyplot as plt
-import numpy as np
 
-#from train import train_model
 
 # Collect arguments passed by meeee!
 def parse():
