@@ -163,7 +163,6 @@ if __name__=="__main__":
     env = CustomSkipFrame(env)
     print(env.observation_space.shape)        
 
-
     env.reset()
     for _ in range(1000):
         action = env.action_space.sample()
