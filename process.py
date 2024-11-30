@@ -3,12 +3,13 @@ import torch
 import torch.nn.functional as F
 from torch.distributions import Categorical
 from torch.utils.tensorboard import SummaryWriter
+from collections import deque
 
 from env import create_train_env
 from model import ActorCritic
 
 LOG_PATH = "logs"
-TRAINED_MODEL_PATH = "my_trained_model"
+TRAINED_MODEL_PATH = "my_trained_models"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NUM_LOCAL_STEPS = 50
 NUM_GLOBAL_STEPS = 5e5
@@ -145,7 +146,7 @@ def local_train(index, args, global_model, optimizer, save=False):
 
         optimizer.step()
 
-        # Save Checkpoint
+        # Process End
         if curr_episode == TERMINATE_STEP:
             print("Training process {} terminated".format(index))
             if save:
@@ -154,6 +155,42 @@ def local_train(index, args, global_model, optimizer, save=False):
             return
     
 
-    
 def local_test(index, args, global_model):
-    pass
+    torch.manual_seed(123 + index)
+    env, num_states, num_actions = create_train_env(args.world, args.stage, args.action_type, args.record)
+    local_model = ActorCritic(num_states, num_actions)
+    # Evaluation Mode
+    local_model.eval()
+    state = torch.from_numpy(env.reset())
+    done = True
+    curr_step = 0
+    actions = deque(maxlen=args.max_actions)
+
+    while True:
+        curr_step += 1
+        if done:
+            local_model.load_state_dict(global_model.state_dict())
+        with torch.no_grad():
+            if done:
+                h_0 = torch.zeros((1,512), dtype=torch.float)
+                c_0 = torch.zeros((1,512), dtype=torch.float)
+            else:
+                h_0 = h_0.detach()
+                c_0 = c_0.detach()
+
+        logits, value, h_0, c_0 = local_model(state, h_0, c_0)
+        policy = F.softmax(logits, dim=1)
+        action = torch.argmax(policy).item()
+        state, reward, done, _ = env.step(action)
+        #env.render()
+        actions.append(action)
+
+        if curr_step > NUM_GLOBAL_STEPS or actions.count(actions[0]) == actions.maxlen:
+            done = True
+        if done:
+            curr_step = 0
+            actions.clear()
+            state = env.reset()
+        state = torch.from_numpy(state)
+
+                                        
