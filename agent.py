@@ -35,27 +35,20 @@ class Agent(object):
     def train(self):
         processes = []
         for index in range(self.num_processes):
-            # Save only one of the process
+            # Managing Child Processes
             if index == 0:
                 process = self.mp.Process(target=local_train, args=(index, self.args, self.global_model, self.optimizer, True))
             else:
                 process = self.mp.Process(target=local_train, args=(index, self.args, self.global_model, self.optimizer))
-
-            # Start Process and store it in the stack
             process.start()
             processes.append(process)
-            for process in processes:
-                # Wait for child processes complete its execution and aggregate the results
-                # Prevent race condition
-                process.join()
-
-    def test(self):
-        processes = []
+                
+        # Evaluate Global Model's Performance
         process = self.mp.Process(target=local_test, args=(self.num_processes, self.args, self.global_model))
-        # Start Process and store it in the stack
         process.start()
         processes.append(process)
         for process in processes:
             process.join()
+
         
         
