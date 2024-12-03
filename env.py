@@ -31,6 +31,20 @@ class Monitor:
         if self.pipe:
             self.pipe.stdin.write(image_array.tobytes())
 
+    def render(self, frame):
+        """Display the frame using OpenCV."""
+        if frame is not None:
+            # Ensure the frame is in RGB format
+            if frame.shape[-1] != 3:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert if BGR
+            cv2.imshow("Super Mario Bros", frame)
+
+            # Wait for a short time and close window if 'q' is pressed
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                cv2.destroyAllWindows()
+                return False
+        return True
+
 def process_frame(frame):
     if frame is not None:
         # RGB to Gray scale
@@ -46,10 +60,6 @@ class CustomReward(Wrapper):
         super(CustomReward, self).__init__(env)
         self.observation_space = Box(low=0, high=255, shape=(1, 84, 84))
         self.curr_score = 0
-        self.current_x = 40
-        self.world = world
-        self.stage = stage
-        self.count_stacked = 0 # check if the agent is stucked
 
         if monitor:
             self.monitor = monitor
@@ -71,19 +81,11 @@ class CustomReward(Wrapper):
                 reward += 50
             else:
                 reward -= 50
-        # Count how long the agent is stacked
-        if self.current_x == info["x_pos"]:
-            self.count_stacked += 1
-            if self.count_stacked >= 25:
-                reward -= 10
-        self.current_x = info["x_pos"]
 
         return state, reward/10., done, info
 
     def reset(self):
         self.curr_score = 0
-        self.current_x = 40
-        self.count_stacked = 0
         return process_frame(self.env.reset())
             
 class CustomSkipFrame(Wrapper):
