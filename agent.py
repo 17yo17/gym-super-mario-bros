@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 # Allow Multiple Processes for A3C
 import torch.multiprocessing as _mp
 from env import create_train_env
@@ -6,6 +7,17 @@ from model import ActorCritic
 from optimizer import GlobalAdam
 from process import local_train
 from process import local_test
+
+# Load the checkpoint
+try:
+    PATH = 'my_trained_models/1_1_checkpoint_9999.pth'
+    checkpoint = torch.load(PATH, weights_only=True)
+    print(checkpoint.keys())
+    model_weights = checkpoint['model_state_dict']
+    print("Check Point is loaded!")
+except:
+    print("Check Point is not loaded!")
+    pass
 
 # Define Hyperparameters
 LR = 1e-4
@@ -21,15 +33,27 @@ class Agent(object):
             torch.cuda.manual_seed(123)
         else:
             torch.manual_seed(123)
-        # Creates a new Python interpreter for each process
-        self.mp = _mp.get_context("spawn")
-        self.env, self.num_states, self.num_actions = create_train_env(args.world, args.stage, args.action_type)
-        # Global Model
-        self.global_model = ActorCritic(self.num_states, self.num_actions).to(self.device)
-        # Share parameters of global model in CPU memory across each process
-        self.global_model.share_memory()
 
-        self.optimizer = GlobalAdam(self.global_model.parameters(), lr=LR)
+        if args.train:
+            # Creates a new Python interpreter for each process
+            self.mp = _mp.get_context("spawn")
+            self.env, self.num_states, self.num_actions = create_train_env(args.world, args.stage, args.action_type, args.record)
+        
+            # Global Model
+            self.global_model = ActorCritic(self.num_states, self.num_actions).to(self.device)
+            # Share parameters of global model in CPU memory across each process
+            self.global_model.share_memory()
+
+            self.optimizer = GlobalAdam(self.global_model.parameters(), lr=LR)
+            
+        elif args.test:
+            self.env, self.num_states, self.num_actions = create_train_env(args.world, args.stage, args.action_type, args.record)
+            self.model = ActorCritic(self.num_states, self.num_actions).to(self.device)
+            self.model.load_state_dict(torch.load("my_trained_models/1_1_checkpoint_9999.pth"))
+            self.model.eval()
+
+        else:
+            print("Choose Train/Test")
         
 
     def train(self):
@@ -51,4 +75,38 @@ class Agent(object):
             process.join()
 
         
-        
+    def test(self):
+        state = torch.from_numpy(self.env.reset())
+        done = True
+
+        while True:
+    
+            if done:
+                h_0 = torch.zeros((1,512), dtype=torch.float)
+                c_0 = torch.zeros((1,512), dtype=torch.float)
+                self.env.reset()
+            else:
+                h_0 = h_0.detach()
+                c_0 = c_0.detach()
+
+            state = state.to(self.device)
+            h_0 = h_0.to(self.device)
+            c_0 = c_0.to(self.device)
+            
+            logits, value, h_0, c_0 = self.model(state, h_0, c_0)
+            policy = F.softmax(logits, dim=1)
+            action = torch.argmax(policy).item()
+            action = int(action)
+            state, reward, done, info = self.env.step(action)
+            state = torch.from_numpy(state)
+            self.env.render()
+            
+            if info["flag_get"]:
+                print("World {} stage {} completed".format(self.args.world, self.args.stage))
+                break
+            
+                
+
+
+
+
