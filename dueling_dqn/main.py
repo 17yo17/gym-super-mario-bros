@@ -1,8 +1,8 @@
 
 import gym_super_mario_bros
 from gym_super_mario_bros.actions import RIGHT_ONLY
-from gym.wrappers import GrayScaleObservation, ResizeObservation, FrameStack
-# from gym.wrappers.monitoring import video_recorder
+from gym.wrappers import GrayScaleObservation, ResizeObservation, FrameStack, RecordVideo
+from gym.wrappers.monitoring import video_recorder
 import argparse
 import time
 import numpy as np
@@ -17,7 +17,7 @@ import agent_dqn
 import joypad_ppo
 
 TEST_EPISODES = 10 # How many episodes to go through when testing
-MAX_ITER = 15000 # Max iterations when training
+MAX_ITER = 3000000 # Max iterations when training
 MODEL_PATH = './models/'
 VIDEO_PATH = './test_videos/'
 GRAPH_PATH = './graphs/'
@@ -29,6 +29,7 @@ def parse():
     parser.add_argument('--model', default=None, help='model file name. If given with train, will continue training from this model')
     parser.add_argument('--display', action='store_true', help='whether to show the gameplay, do not use with record video')
     parser.add_argument('--record_video', action='store_true', help='whether to record video during testing, do not use with display.')
+    parser.add_argument('--high_contrast', action='store_true', help='run high contrast environment, helps with training. For testing older models, do not use this flag')
     parser.add_argument('--ppo', action='store_true', help='whether to run with PPO, else will default to DQN')
     args = parser.parse_args()
     return args
@@ -56,7 +57,10 @@ def setup_env(args):
         envs = SubprocVecEnv([make_env_ppo(i, args.display) for i in range(num_envs)])
         return envs
     else:
-        env = gym_super_mario_bros.make('SuperMarioBros-1-1-v0', render_mode='human' if args.display else 'rgb_array', apply_api_compatibility=True)
+        if (args.high_contrast):
+            env = gym_super_mario_bros.make('SuperMarioBros-1-1-v1', render_mode='human' if args.display else 'rgb_array', apply_api_compatibility=True)
+        else:
+            env = gym_super_mario_bros.make('SuperMarioBros-1-1-v0', render_mode='human' if args.display else 'rgb_array', apply_api_compatibility=True)
         # all of these help with performance
         env = JoypadSpace(env, RIGHT_ONLY) # agent only needs to go right
         env = frame_skipper.FrameSkipper(env, skip=4)
@@ -67,34 +71,41 @@ def setup_env(args):
 
 def test(args, env, video_path, agent, start_time):
     rewards = []
-    vid = None
-    '''
+    state = None
     if args.record_video:
-        vid = video_recorder.VideoRecorder(env=env.env, path=video_path)
-    '''
-    
+        venv = RecordVideo(env, video_folder=VIDEO_PATH, name_prefix="mario_" + str(start_time), episode_trigger=lambda x: True)
+        state, _ = venv.reset()
+        venv.start_video_recorder()
+        print("---------------------Started video recorder")
+    else:
+        venv = env
+        state, _ = venv.reset()
+    first = True
     for _ in tqdm(range(TEST_EPISODES)):
+        if (first):
+            first = False
+        else:
+            print("---------------------New episode")
+            state, _ = venv.reset()
         episode_reward = 0.0
         truncated = False
-        state, _ = env.reset()
         terminated = False
         while not terminated and not truncated:
             action = agent.take_action(state, test=True)
-            state, reward, terminated, truncated, _ = env.step(action)
+            state, reward, terminated, truncated, _ = venv.step(action)
             episode_reward += reward
 
-            if args.record_video:
-                vid.capture_frame()
+            if args.display:
+                # Slow it down a bit to make it easier to see
+                time.sleep(.06)
 
         if truncated:
             break
 
     rewards.append(episode_reward)
 
-    if args.record_video:
-        vid.close()  # Ensure the video recorder is properly closed
-
-    env.close()
+    print("---------------------Closing env")
+    venv.close()
 
     print('Run %d episodes' % (TEST_EPISODES))
     print('Mean:', np.mean(rewards))
