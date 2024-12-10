@@ -17,8 +17,13 @@ If you want to change the number of iterations, modify the MAX_ITER global value
 Use `main.py --test --model model_name.pth` to test a model. For PPO models use `main.py --test --model model_name` with no extension
 If you want to change the number of episodes to test with, modify the TEST_EPISODES global value in `main.py`
 
+Models labeled "high_contrast" need to be run in high contrast mode for best effect. Any models trained in high contrast mode should also be tested in high contrast mode as well.
+
 ### Options
 When running main, you can pass the following options to activate certain features:
 - Pass `--display` to visualize the gameplay on screen as the model is trained/tested
-- Pass `--record_video` to record the gameplay to an mp4 file
-- Note that Display and Video shouldn't be used together
+- Pass `--high_contrast` to train/test in high contrast mode.
+
+### Pre trained models:
+- Download pre-trained models from [this link](https://drive.google.com/drive/folders/1yHWp3ArquET8U2CG6De0eD_veRkJHwHn?usp=sharing)
+- Highest performing model is `dueling_dqn_2mil_high_contrast_high_score.pth`, which should be run in high contrast mode.
