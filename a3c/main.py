@@ -21,6 +21,7 @@ def parse():
     parser.add_argument('--train', action='store_true', help='Train a Model')
     parser.add_argument('--test', action='store_true', help='Test a Model')
     parser.add_argument('--record', action='store_true', help='Record video')
+    parser.add_argument("--max_actions", type=int, default=200, help="Maximum repetition steps in test phase")
     try:
         from argument import add_arguments
         parser = add_arguments(parser)

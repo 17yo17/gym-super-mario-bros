@@ -10,7 +10,7 @@ from process import local_test
 
 # Load the checkpoint
 try:
-    PATH = 'my_trained_models/1_1_checkpoint_9999.pth'
+    PATH = 'my_trained_models/a3c_super_mario_bros_1_1_10000'
     checkpoint = torch.load(PATH, weights_only=True)
     print(checkpoint.keys())
     model_weights = checkpoint['model_state_dict']
@@ -48,8 +48,9 @@ class Agent(object):
             
         elif args.test:
             self.env, self.num_states, self.num_actions = create_train_env(args.world, args.stage, args.action_type, args.record)
-            self.model = ActorCritic(self.num_states, self.num_actions).to(self.device)
-            self.model.load_state_dict(torch.load("my_trained_models/1_1_checkpoint_9999.pth"))
+            self.model = ActorCritic(self.num_states, self.num_actions)
+            self.model.load_state_dict(torch.load("my_trained_models/a3c_super_mario_bros_1_1_10000"))
+            self.model.to(self.device)
             self.model.eval()
 
         else:
@@ -68,9 +69,10 @@ class Agent(object):
             processes.append(process)
                 
         # Evaluate Global Model's Performance
-        process = self.mp.Process(target=local_test, args=(self.num_processes, self.args, self.global_model))
-        process.start()
-        processes.append(process)
+        #process = self.mp.Process(target=local_test, args=(self.num_processes, self.args, self.global_model))
+        #process.start()
+        #processes.append(process)
+        
         for process in processes:
             process.join()
 
@@ -99,7 +101,7 @@ class Agent(object):
             action = int(action)
             state, reward, done, info = self.env.step(action)
             state = torch.from_numpy(state)
-            self.env.render()
+            #self.env.render()
             
             if info["flag_get"]:
                 print("World {} stage {} completed".format(self.args.world, self.args.stage))

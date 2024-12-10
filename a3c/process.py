@@ -13,7 +13,7 @@ TRAINED_MODEL_PATH = "my_trained_models"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NUM_LOCAL_STEPS = 100
 NUM_GLOBAL_STEPS = 5e5
-CHECKPOINT = 5000
+CHECKPOINT = 1000
 TERMINATE_STEP = 1e4
 
 # Hyperparameters
@@ -104,7 +104,7 @@ def local_train(index, args, global_model, optimizer, save=False):
                 break
         if save:
             total_reward = sum(rewards)
-            print(rewards)
+            print("Episode {}: {:.2f}".format(curr_episode, total_reward))
             
         # Bootstrap: estimate of the future reward if not terminated (Critic output)
         R = torch.zeros((1,1), dtype=torch.float).to(DEVICE)
@@ -152,9 +152,9 @@ def local_train(index, args, global_model, optimizer, save=False):
             writer.add_scalar("Train_{}/Entropy".format(index), entropy_loss, curr_episode)
             writer.add_scalar("Train_{}/Actor Loss".format(index), actor_loss, curr_episode)
             writer.add_scalar("Train_{}/Critic Loss".format(index), critic_loss, curr_episode)
-            if curr_episode % opt.save_interval == 0 and curr_episode > 0:
+            if curr_episode % CHECKPOINT == 0 and curr_episode > 0:
                 torch.save(global_model.state_dict(),
-                           "{}/a3c_super_mario_bros_{}_{}".format(opt.saved_path, opt.world, opt.stage))
+                           "{}/a3c_super_mario_bros_{}_{}_{}".format(TRAINED_MODEL_PATH, args.world, args.stage, curr_episode))
 
         # Process End
         if curr_episode == TERMINATE_STEP:
