@@ -1,0 +1,2 @@
+pip install gym==0.25.1
+gym_super_mario_bros==7.4.0
