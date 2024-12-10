@@ -11,10 +11,10 @@ from model import ActorCritic
 LOG_PATH = "logs"
 TRAINED_MODEL_PATH = "my_trained_models"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-NUM_LOCAL_STEPS = 50
+NUM_LOCAL_STEPS = 100
 NUM_GLOBAL_STEPS = 5e5
 CHECKPOINT = 5000
-TERMINATE_STEP = int(NUM_GLOBAL_STEPS / NUM_LOCAL_STEPS)
+TERMINATE_STEP = 1e4
 
 # Hyperparameters
 GAMMA = 0.9
@@ -30,7 +30,7 @@ def local_train(index, args, global_model, optimizer, save=False):
 
     if save:
         start_time = timeit.default_timer()
-    writer = SummaryWriter(LOG_PATH)
+        writer = SummaryWriter(LOG_PATH)
 
     env, num_states, num_actions = create_train_env(args.world, args.stage, args.action_type, args.record)
 
@@ -39,17 +39,13 @@ def local_train(index, args, global_model, optimizer, save=False):
     # Set the agent to Training mode
     local_model.train()
 
-    state = torch.from_numpy(env.reset()).to(DEVICE)
+    state = torch.from_numpy(env.reset()).float().to(DEVICE)
 
     done = True
     curr_step = 0
     curr_episode = 0
 
     while True:
-        if save:
-            if curr_episode % CHECKPOINT == 0 and curr_episode > 0:
-                torch.save(global_model.state_dict(), "{}/{}_{}_checkpoint_{}.pth".format(TRAINED_MODEL_PATH, args.world, args.stage, curr_episode))
-            print("Process {}: Episode {}".format(index, curr_episode))
 
         curr_episode += 1
         # Child Process gets the current parameters of the Global Model
@@ -57,12 +53,15 @@ def local_train(index, args, global_model, optimizer, save=False):
 
         if done:
             # Initialize h0 and c0 all zeros
-            h_0 = torch.zeros((1, 512), dtype=torch.float).to(DEVICE)
-            c_0 = torch.zeros((1, 512), dtype=torch.float).to(DEVICE)
+            h_0 = torch.zeros((1, 512), dtype=torch.float)
+            c_0 = torch.zeros((1, 512), dtype=torch.float)
         else:
             # Detach the hidden state of LSTM
-            h_0 = h_0.detach().to(DEVICE)
-            c_0 = c_0.detach().to(DEVICE)
+            h_0 = h_0.detach()
+            c_0 = c_0.detach()
+
+        h_0 = h_0.to(DEVICE)
+        c_0 = c_0.to(DEVICE)
 
         log_policies = []
         values = []
@@ -78,14 +77,14 @@ def local_train(index, args, global_model, optimizer, save=False):
             policy = F.softmax(logits, dim=1)
             log_policy = F.log_softmax(logits, dim=1)
             # High: sparse probability (unsure about the action), Low: concentrated probability (confident about the action)
-            entropy = -(policy * log_policy).sum(1, keepdim=True)
+            entropy = -torch.sum(policy * log_policy, dim=1, keepdim=True)
 
             # Sample based on the probability
             m = Categorical(policy)
             action = m.sample().item()
 
             state, reward, done, info = env.step(action)
-            state = torch.from_numpy(state).to(DEVICE)
+            state = torch.from_numpy(state).float().to(DEVICE)
 
             if curr_step > NUM_GLOBAL_STEPS:
                 done = True
@@ -93,7 +92,7 @@ def local_train(index, args, global_model, optimizer, save=False):
             # Reached terminate state, reset
             if done:
                 curr_step = 0
-                state = torch.from_numpy(env.reset()).to(DEVICE)
+                state = torch.from_numpy(env.reset()).float().to(DEVICE)
 
             # Save Logs
             values.append(value)
@@ -103,7 +102,10 @@ def local_train(index, args, global_model, optimizer, save=False):
 
             if done: 
                 break
-
+        if save:
+            total_reward = sum(rewards)
+            print(rewards)
+            
         # Bootstrap: estimate of the future reward if not terminated (Critic output)
         R = torch.zeros((1,1), dtype=torch.float).to(DEVICE)
         if not done: 
@@ -122,29 +124,37 @@ def local_train(index, args, global_model, optimizer, save=False):
         for value, log_policy, reward, entropy in list(zip(values, log_policies, rewards, entropies))[::-1]:
 
             # GAMMA (degree of future rewards' contribution), TAU (smoothing factor to control the contribution of temporal difference)
-            gae = gae * GAMMA * TAU
             # TD Residual
-            gae = gae + reward + GAMMA * next_value.detach() - value.detach()
+            gae = gae * GAMMA * TAU + reward + GAMMA * next_value.detach() - value.detach()
             
             next_value = value
 
-            actor_loss = actor_loss + log_policy * gae # Maximize -> Increase prob of actions that leads to + advantages
+            actor_loss += log_policy * gae # Maximize -> Increase prob of actions that leads to + advantages
             R = R * GAMMA + reward
-            critic_loss = critic_loss + (R - value) ** 2 / 2 # Minimize the squared error between the predicted value and bootstrap
-            entropy_loss = entropy_loss + entropy
+            critic_loss += (R - value) ** 2 / 2 # Minimize the squared error between the predicted value and bootstrap
+            entropy_loss += entropy
 
         total_loss = -actor_loss + critic_loss - BETA * entropy_loss
-        writer.add_scalar("Train_{}/Loss".format(index), total_loss, curr_episode)
         optimizer.zero_grad()
         total_loss.backward()
+        # Gradient Clipping for potential exploding gradients
+        torch.nn.utils.clip_grad_norm_(local_model.parameters(), max_norm=40)
 
         # Synchronizing Gradients of Child Processes to Global Model
         for local_param, global_param in zip(local_model.parameters(), global_model.parameters()):
-            if global_param.grad is not None:
-                break
             global_param.grad = local_param.grad
 
         optimizer.step()
+
+        if save: 
+            writer.add_scalar("Train_{}/Reward".format(index), total_reward, curr_episode)
+            writer.add_scalar("Train_{}/Loss".format(index), total_loss, curr_episode)
+            writer.add_scalar("Train_{}/Entropy".format(index), entropy_loss, curr_episode)
+            writer.add_scalar("Train_{}/Actor Loss".format(index), actor_loss, curr_episode)
+            writer.add_scalar("Train_{}/Critic Loss".format(index), critic_loss, curr_episode)
+            if curr_episode % opt.save_interval == 0 and curr_episode > 0:
+                torch.save(global_model.state_dict(),
+                           "{}/a3c_super_mario_bros_{}_{}".format(opt.saved_path, opt.world, opt.stage))
 
         # Process End
         if curr_episode == TERMINATE_STEP:
